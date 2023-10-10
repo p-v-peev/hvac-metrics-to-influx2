@@ -59,6 +59,11 @@ String convertAddressToString(DeviceAddress deviceAddress) {
   return addrToReturn;
 }
 
+void connect_wifi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
 void wait_for_wifi_connect() {
   // Flash the builtin led while waiting for WiFi connection
   for (uint8_t i = 0; i < WIFI_CONNECT_THRESHOLD && WiFi.status() != WL_CONNECTED; i++)
@@ -103,7 +108,7 @@ void configure_temperature_sensors() {
   }  
 }
 
-void connect_influx_client() {
+void check_influx_connection_and_restart_if_needed() {
   // Check server connection
   if(!influx_client.validateConnection())
   {
@@ -118,8 +123,7 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  connect_wifi();
   wait_for_wifi_connect();
 
   // The interrupt will be on FALLING EDGE
@@ -128,8 +132,9 @@ void setup() {
 
   configure_temperature_sensors();
 
-  timeSync(TIME_ZONE_INFO, "time.google.com", "time.facebook.com", "time.facebook.com");
-  connect_influx_client();
+  influx_client.setInsecure(true);
+  influx_client.setHTTPOptions(HTTPOptions().connectionReuse(false));
+  check_influx_connection_and_restart_if_needed();
 
   // Setup base time
   wifi_check_base_time = report_base_time = millis();
@@ -175,7 +180,11 @@ void loop() {
     // Turn on the builtin led to indicate data is being sent
     digitalWrite(LED_BUILTIN, LOW);
     if(influx_client.writePoint(heat_pump_metrics))
+    {
       // If the atempt is successfull turn of the led
       digitalWrite(LED_BUILTIN, HIGH);
+    } else {
+      check_influx_connection_and_restart_if_needed();
     }
+  }
 }
